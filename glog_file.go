@@ -80,20 +80,14 @@ func shortHostname(hostname string) string {
 
 // logName returns a new log file name containing tag, with start time t, and
 // the name for the symlink for tag.
-func logName(tag string, t time.Time) (name, link string) {
-	name = fmt.Sprintf("%s.%s.%s.log.%s.%04d%02d%02d-%02d%02d%02d.%d",
+func logName(tag string, t time.Time) (name string) {
+	name = fmt.Sprintf("%s.%s.%04d-%02d-%02d.log",
 		program,
-		host,
-		userName,
 		tag,
 		t.Year(),
 		t.Month(),
-		t.Day(),
-		t.Hour(),
-		t.Minute(),
-		t.Second(),
-		pid)
-	return name, program + "." + tag
+		t.Day())
+	return name
 }
 
 var onceLogDirs sync.Once
@@ -107,18 +101,35 @@ func create(tag string, t time.Time) (f *os.File, filename string, err error) {
 	if len(logDirs) == 0 {
 		return nil, "", errors.New("log: no log dirs")
 	}
-	name, link := logName(tag, t)
+	name := logName(tag, t)
 	var lastErr error
 	for _, dir := range logDirs {
 		fname := filepath.Join(dir, name)
-		f, err := os.Create(fname)
-		if err == nil {
-			symlink := filepath.Join(dir, link)
-			os.Remove(symlink)        // ignore err
-			os.Symlink(name, symlink) // ignore err
-			return f, fname, nil
+		if exists(fname) {
+			f, err := os.OpenFile(fname, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0660)
+			if err == nil {
+				return f, fname, nil
+			}
+			lastErr = err
+		} else {
+			f, err := os.Create(fname)
+			if err == nil {
+				return f, fname, nil
+			}
+			lastErr = err
 		}
-		lastErr = err
+
 	}
 	return nil, "", fmt.Errorf("log: cannot create log: %v", lastErr)
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsExist(err) {
+		return false
+	}
+	return false
 }
